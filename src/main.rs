@@ -63,7 +63,6 @@ impl<T: PartialOrd + Debug> LinkedList<T> {
         println!("{}", print_string);
     }
 }
-
 fn main() {
     let mut ll = LinkedList::new();
     ll.push(1);
@@ -71,4 +70,61 @@ fn main() {
     ll.push(2);
     ll.push(3);
     ll.print();
+}
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_new_list_is_empty() {
+        let list: LinkedList<i32> = LinkedList::new();
+        assert!(list.head.is_none());
+    }
+
+    #[test]
+    fn test_push_and_order() {
+        let mut list = LinkedList::new();
+        list.push(3);
+        list.push(1);
+        list.push(4);
+        list.push(2);
+
+        let expected = vec![1, 2, 3, 4];
+        assert_eq!(list_to_vec(&list), expected);
+    }
+
+    #[test]
+    fn test_push_duplicates() {
+        let mut list = LinkedList::new();
+        list.push(1);
+        list.push(1);
+        list.push(2);
+        list.push(1);
+
+        let expected = vec![1, 1, 1, 2];
+        assert_eq!(list_to_vec(&list), expected);
+    }
+
+    #[test]
+    fn test_push_reverse_order() {
+        let mut list = LinkedList::new();
+        list.push(4);
+        list.push(3);
+        list.push(2);
+        list.push(1);
+
+        let expected = vec![1, 2, 3, 4];
+        assert_eq!(list_to_vec(&list), expected);
+    }
+
+    // Helper function to convert LinkedList to Vec for easier testing
+    fn list_to_vec<T: Clone>(list: &LinkedList<T>) -> Vec<T> {
+        let mut result = Vec::new();
+        let mut current = &list.head;
+        while let Some(node) = current {
+            result.push(node.data.clone());
+            current = &node.next;
+        }
+        result
+    }
 }
