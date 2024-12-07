@@ -1,9 +1,67 @@
+use rand::prelude::*;
 use std::fmt::Debug;
 use std::mem;
 
 struct Node<T> {
     data: T,
     next: Option<Box<Node<T>>>,
+}
+
+struct SkipList<T: PartialOrd + Debug + Clone> {
+    levels: Vec<LinkedList<T>>,
+    max_level: usize,
+}
+
+impl<T: PartialOrd + Debug + Clone> SkipList<T> {
+    fn new(max_level: usize) -> Self {
+        let mut levels = Vec::with_capacity(max_level);
+        for _ in 0..max_level {
+            levels.push(LinkedList::new());
+        }
+        SkipList { levels, max_level }
+    }
+
+    fn insert(&mut self, data: T) {
+        let mut rng = rand::thread_rng();
+        let mut level = 0;
+
+        while level < self.max_level && rng.gen::<f64>() < 0.5 {
+            if level >= self.levels.len() {
+                self.levels.push(LinkedList::new());
+            }
+            self.levels[level].push(data.clone());
+            level += 1;
+        }
+
+        // Ensure the element is always inserted into the bottom level
+        if level == 0 {
+            self.levels[0].push(data);
+        }
+    }
+
+    fn contains(&self, data: T) -> bool {
+        // We'll search in the bottom level (most detailed)
+        if let Some(bottom_level) = self.levels.first() {
+            let mut current = &bottom_level.head;
+            while let Some(node) = current {
+                if &node.data == &data {
+                    return true;
+                }
+                if &node.data > &data {
+                    return false;
+                }
+                current = &node.next;
+            }
+        }
+        false
+    }
+
+    fn print(&self) {
+        for (i, level) in self.levels.iter().enumerate() {
+            print!("Level {}: ", i);
+            level.print();
+        }
+    }
 }
 
 struct LinkedList<T> {
@@ -64,13 +122,17 @@ impl<T: PartialOrd + Debug> LinkedList<T> {
     }
 }
 fn main() {
-    let mut ll = LinkedList::new();
-    ll.push(1);
-    ll.push(4);
-    ll.push(2);
-    ll.push(3);
-    ll.print();
+    let mut sl = SkipList::new(5);
+    sl.insert(1);
+    sl.insert(4);
+    sl.insert(2);
+    sl.insert(3);
+    sl.print();
+
+    println!("{}", sl.contains(3));
+    println!("{}", sl.contains(5));
 }
+
 #[cfg(test)]
 mod tests {
     use super::*;
