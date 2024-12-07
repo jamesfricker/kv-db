@@ -24,8 +24,9 @@ impl<T: PartialOrd + Debug + Clone> SkipList<T> {
     fn insert(&mut self, data: T) {
         let mut rng = rand::thread_rng();
         let mut level = 0;
+        let threshold = 0.5;
 
-        while level < self.max_level && rng.gen::<f64>() < 0.5 {
+        while level < self.max_level && rng.gen::<f64>() < threshold {
             if level >= self.levels.len() {
                 self.levels.push(LinkedList::new());
             }
@@ -38,22 +39,51 @@ impl<T: PartialOrd + Debug + Clone> SkipList<T> {
             self.levels[0].push(data);
         }
     }
-
     fn contains(&self, data: T) -> bool {
-        // We'll search in the bottom level (most detailed)
-        if let Some(bottom_level) = self.levels.first() {
-            let mut current = &bottom_level.head;
+        if self.levels.is_empty() {
+            return false;
+        }
+
+        let mut level = self.levels.len() - 1;
+        let mut current = &self.levels[level].head;
+
+        loop {
             while let Some(node) = current {
                 if &node.data == &data {
                     return true;
+                } else if &node.data > &data {
+                    break;
+                } else {
+                    if let Some(_) = &node.next {
+                        current = &node.next;
+                    } else {
+                        break;
+                    }
                 }
-                if &node.data > &data {
-                    return false;
-                }
-                current = &node.next;
             }
+
+            if level == 0 {
+                return false;
+            }
+
+            // Move down to the next level
+            level -= 1;
+            let mut prev = &self.levels[level].head;
+            while let Some(node) = prev {
+                if &node.data >= &data {
+                    break;
+                }
+                if let Some(next) = &node.next {
+                    if &next.data > &data {
+                        break;
+                    }
+                    prev = &node.next;
+                } else {
+                    break;
+                }
+            }
+            current = prev;
         }
-        false
     }
 
     fn print(&self) {
@@ -122,15 +152,20 @@ impl<T: PartialOrd + Debug> LinkedList<T> {
     }
 }
 fn main() {
-    let mut sl = SkipList::new(5);
-    sl.insert(1);
-    sl.insert(4);
-    sl.insert(2);
-    sl.insert(3);
-    sl.print();
+    let mut skip_list = SkipList::new(5); // Create a skip list with 5 levels max
+    let mut rng = rand::thread_rng();
 
-    println!("{}", sl.contains(3));
-    println!("{}", sl.contains(5));
+    // Generate and insert 100 random numbers
+    for _ in 0..100 {
+        let number = rng.gen_range(0..=100);
+        skip_list.insert(number);
+    }
+
+    // Print the skip list
+    skip_list.print();
+
+    println!("{}", skip_list.contains(55));
+    println!("{}", skip_list.contains(40));
 }
 
 #[cfg(test)]
