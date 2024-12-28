@@ -1,0 +1,28 @@
+name: Test and Benchmark
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+
+jobs:
+  test_and_benchmark:
+    runs-on: ubuntu-latest
+    steps:
+      - name: "Checkout Branch"
+        uses: actions/checkout@v4
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: "Install Rust toolchain"
+        run: rustup show
+
+      - name: cargo test
+        run: cargo test
+
+      - name: cargo bench
+        run: cargo bench
+

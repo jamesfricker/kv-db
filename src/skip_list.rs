@@ -1,8 +1,6 @@
 pub use skip_list::SkipList;
 
 mod skip_list {
-    // Swap out rand::thread_rng with something faster, like fastrand or SmallRng
-    // For demonstration, we'll use SmallRng from rand:
     use log::debug;
     use rand::rngs::SmallRng;
     use rand::{Rng, SeedableRng};
@@ -50,7 +48,7 @@ mod skip_list {
 
             // Pre-allocate a decent capacity if you have a sense of how many inserts you’ll do.
             // e.g. `with_capacity(1000)`, or dynamic resizing strategy later
-            let mut nodes = Vec::with_capacity(1);
+            let mut nodes = Vec::with_capacity(1000);
             nodes.push(head_node);
 
             SkipList {
