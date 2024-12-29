@@ -16,7 +16,7 @@ fn bench_insert(b: &mut Bencher) {
     b.iter(|| {
         // Generate a random key and use it as the value for simplicity
         let key = rng.gen::<i32>();
-        skip_list.insert(key, key).unwrap();
+        skip_list.put(key, key).unwrap();
     });
 }
 
@@ -29,13 +29,13 @@ fn bench_insert_existing(b: &mut Bencher) {
     // Pre-populate the skip list with 1,000,000 elements
     for _ in 0..1_000_000 {
         let key = rng.gen::<i32>();
-        skip_list.insert(key, key).unwrap();
+        skip_list.put(key, key).unwrap();
     }
 
     b.iter(|| {
         // Insert additional elements
         let key = rng.gen::<i32>();
-        skip_list.insert(key, key).unwrap();
+        skip_list.put(key, key).unwrap();
     });
 }
 
@@ -49,7 +49,7 @@ fn bench_get_existing(b: &mut Bencher) {
     // Pre-populate the skip list with 1,000,000 elements
     for _ in 0..1_000_000 {
         let key = rng.gen::<i32>();
-        skip_list.insert(key, key).unwrap();
+        skip_list.put(key, key).unwrap();
         keys.push(key);
     }
 
@@ -70,7 +70,7 @@ fn bench_get_nonexistent(b: &mut Bencher) {
     // Pre-populate the skip list with 1,000,000 elements
     for _ in 0..1_000_000 {
         let key = rng.gen::<i32>();
-        skip_list.insert(key, key).unwrap();
+        skip_list.put(key, key).unwrap();
     }
 
     b.iter(|| {

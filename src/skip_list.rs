@@ -70,7 +70,7 @@ where
         level
     }
 
-    pub fn insert(&mut self, key: K, value: V) -> Result<(), SkipListError> {
+    pub fn put(&mut self, key: K, value: V) -> Result<(), SkipListError> {
         let level = self.random_level();
         debug!("Inserting key {:?} with level {}", key, level);
 
@@ -127,18 +127,50 @@ where
         Ok(())
     }
 
+    /// Retrieves a reference to the value associated with the given key in the skip list.
+    ///
+    /// This function performs a search through the skip list for the specified key.
+    /// If the key exists, it returns a reference to the associated value.
+    /// If the key is not found, it returns a [`SkipListError::KeyNotFound`] error.
+    ///
+    /// # Arguments
+    ///
+    /// * `key` - A reference to the key to search for in the skip list.
+    ///
+    /// # Returns
+    ///
+    /// * `Ok(&V)` - A reference to the value associated with the key.
+    /// * `Err(SkipListError)` - An error if the key is not found.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// # use kv_db::SkipList;
+    /// # use kv_db::SkipListError;
+    /// let mut skip_list = SkipList::new(5);
+    /// skip_list.put(42, "Answer to everything");
+    ///
+    /// match skip_list.get(&42) {
+    ///     Ok(value) => println!("Found: {}", value),
+    ///     Err(SkipListError::KeyNotFound) => println!("Key not found."),
+    /// }
+    /// ```
     pub fn get(&self, key: &K) -> Result<&V, SkipListError> {
         let mut current = self.head;
+        // we start the search at the highest level, and go down
         for level in (0..=self.current_level).rev() {
             while let Some(next_idx) = self.nodes[current].forward[level] {
                 match self.nodes[next_idx].key.as_ref().unwrap().cmp(key) {
+                    // go to the next index
                     Ordering::Less => current = next_idx,
+                    // we found the node
                     Ordering::Equal => {
                         return self.nodes[next_idx]
                             .value
                             .as_ref()
                             .ok_or(SkipListError::KeyNotFound);
                     }
+                    // break out of the loop and go down a level
                     Ordering::Greater => break,
                 }
             }
@@ -185,9 +217,9 @@ mod tests {
         let mut list = SkipList::new(5);
 
         // Insert elements
-        list.insert(3, "three").unwrap();
-        list.insert(1, "one").unwrap();
-        list.insert(2, "two").unwrap();
+        list.put(3, "three").unwrap();
+        list.put(1, "one").unwrap();
+        list.put(2, "two").unwrap();
 
         // Verify insertion and retrieval
         assert_eq!(list.get(&1).unwrap(), &"one");
@@ -206,7 +238,7 @@ mod tests {
 
         // Insert elements in sorted order
         for i in 1..=10 {
-            list.insert(i, format!("number {}", i)).unwrap();
+            list.put(i, format!("number {}", i)).unwrap();
         }
 
         // Verify all elements
@@ -226,7 +258,7 @@ mod tests {
 
         // Insert elements in reverse order
         for i in (1..=10).rev() {
-            list.insert(i, format!("number {}", i)).unwrap();
+            list.put(i, format!("number {}", i)).unwrap();
         }
 
         // Verify all elements
@@ -245,10 +277,10 @@ mod tests {
         let mut list = SkipList::new(5);
 
         // Insert a key
-        list.insert(1, "one").unwrap();
+        list.put(1, "one").unwrap();
 
         // Insert the same key with a different value
-        list.insert(1, "uno").unwrap();
+        list.put(1, "uno").unwrap();
 
         // Verify that the value is updated
         assert_eq!(list.get(&1).unwrap(), &"uno");
@@ -261,9 +293,9 @@ mod tests {
         let mut list = SkipList::new(5);
 
         // Insert some keys
-        list.insert(10, "ten").unwrap();
-        list.insert(20, "twenty").unwrap();
-        list.insert(30, "thirty").unwrap();
+        list.put(10, "ten").unwrap();
+        list.put(20, "twenty").unwrap();
+        list.put(30, "thirty").unwrap();
 
         // Search for keys that do not exist
         let nonexistent_keys = vec![5, 15, 25, 35];
@@ -283,7 +315,7 @@ mod tests {
 
         // Insert a large number of elements
         for i in 1..=num_elements {
-            list.insert(i, format!("number {}", i)).unwrap();
+            list.put(i, format!("number {}", i)).unwrap();
             inserted_keys.insert(i);
         }
 
@@ -312,7 +344,7 @@ mod tests {
         for _ in 0..num_elements {
             let key = rng.gen_range(1..=10000);
             let value = format!("value {}", key);
-            list.insert(key, value).unwrap();
+            list.put(key, value).unwrap();
             inserted_keys.insert(key);
         }
 
@@ -338,7 +370,7 @@ mod tests {
 
         // Insert elements that potentially reach up to max_level
         for i in 1..=20 {
-            list.insert(i, format!("number {}", i)).unwrap();
+            list.put(i, format!("number {}", i)).unwrap();
         }
 
         // Verify all elements
@@ -364,7 +396,7 @@ mod tests {
         for _ in 0..num_elements {
             let key = rng.gen_range(1..=1000);
             let value = format!("value {}", key);
-            list.insert(key, value).unwrap();
+            list.put(key, value).unwrap();
             inserted_keys.push(key);
         }
 
@@ -404,7 +436,7 @@ mod tests {
         let mut list = SkipList::new(5);
 
         // Insert a single element
-        list.insert(42, "forty-two").unwrap();
+        list.put(42, "forty-two").unwrap();
 
         // Verify the inserted element
         assert_eq!(list.get(&42).unwrap(), &"forty-two");
@@ -421,9 +453,9 @@ mod tests {
         let mut list = SkipList::new(5);
 
         // Insert the same key multiple times with different values
-        list.insert(100, "hundred").unwrap();
-        list.insert(100, "cien").unwrap(); // Update
-        list.insert(100, "cent").unwrap(); // Update again
+        list.put(100, "hundred").unwrap();
+        list.put(100, "cien").unwrap(); // Update
+        list.put(100, "cent").unwrap(); // Update again
 
         // Verify the latest value
         assert_eq!(list.get(&100).unwrap(), &"cent");
@@ -436,11 +468,11 @@ mod tests {
         let mut list = SkipList::new(3);
 
         // Insert elements
-        list.insert(1, "one").unwrap();
-        list.insert(2, "two").unwrap();
-        list.insert(3, "three").unwrap();
-        list.insert(4, "four").unwrap();
-        list.insert(5, "five").unwrap();
+        list.put(1, "one").unwrap();
+        list.put(2, "two").unwrap();
+        list.put(3, "three").unwrap();
+        list.put(4, "four").unwrap();
+        list.put(5, "five").unwrap();
 
         // Traverse each level and verify sorted order
         for level in 0..=list.current_level {
