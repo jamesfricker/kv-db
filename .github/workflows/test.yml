@@ -6,7 +6,7 @@ on:
       - master
 
 jobs:
-  test_and_benchmark:
+  test:
     runs-on: ubuntu-latest
     steps:
       - name: "Checkout Branch"
@@ -18,8 +18,15 @@ jobs:
         run: rustup show
 
       - name: cargo test
-        run: cargo test
+        run: cargo test --verbose
 
+  benchmark:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: Swatinem/rust-cache@v2
+      - run: rustup update nightly && rustup default nightly
+      - name: "Install Rust toolchain"
+        run: rustup show
       - name: cargo bench
-        run: cargo bench
-
+        run: cargo bench --verbose
