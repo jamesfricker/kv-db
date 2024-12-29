@@ -29,4 +29,41 @@ jobs:
       - name: "Install Rust toolchain"
         run: rustup show
       - name: cargo bench
-        run: cargo bench
+        run: cargo bench > benchmark_results.txt
+      - name: Upload Benchmark Results
+        uses: actions/upload-artifact@v3
+        with:
+          name: benchmark-results
+          path: benchmark_results.txt
+
+  formatting:
+      runs-on: ubuntu-latest
+      steps:
+        - uses: actions/checkout@v4
+        - uses: Swatinem/rust-cache@v2
+        - run: rustup component add rustfmt
+        - name: Check Formatting
+          run: cargo fmt -- --check
+
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: Swatinem/rust-cache@v2
+      - run: rustup component add clippy
+      - name: Lint Code
+        run: cargo clippy -- -D warnings
+
+  coverage:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: Swatinem/rust-cache@v2
+      - name: Install Tarpaulin
+        run: cargo install cargo-tarpaulin
+      - name: Generate Coverage
+        run: cargo tarpaulin --out Xml
+      - name: Upload Coverage
+        uses: codecov/codecov-action@v3
+        with:
+          files: coverage.xml
