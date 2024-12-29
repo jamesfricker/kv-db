@@ -53,17 +53,3 @@ jobs:
       - run: rustup component add clippy
       - name: Lint Code
         run: cargo clippy -- -D warnings
-
-  coverage:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: Swatinem/rust-cache@v2
-      - name: Install Tarpaulin
-        run: cargo install cargo-tarpaulin
-      - name: Generate Coverage
-        run: cargo tarpaulin --out Xml
-      - name: Upload Coverage
-        uses: codecov/codecov-action@v3
-        with:
-          files: coverage.xml
