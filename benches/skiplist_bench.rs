@@ -3,8 +3,8 @@
 
 extern crate test;
 
+use kv_db::SkipList;
 use rand::Rng;
-use rust_skip_list::SkipList;
 use test::Bencher;
 
 #[bench]
