@@ -3,7 +3,6 @@ use bincode::{deserialize, serialize};
 use serde::{de::DeserializeOwned, Serialize};
 use std::fs::{File, OpenOptions};
 use std::io::{self, BufReader, Read, Write};
-use std::path::Path;
 
 pub struct Wal {
     location: String,
@@ -124,9 +123,9 @@ impl Wal {
 mod tests {
     use super::Wal;
     use crate::KvPair;
-    use bincode::deserialize;
+    
     use env_logger::{Builder, Env};
-    use std::io::{self, Read, Seek, SeekFrom, Write};
+    use std::io::{self, Read, Write};
     use std::sync::{Arc, Mutex};
     use std::thread;
     use tempfile::NamedTempFile;
@@ -174,7 +173,7 @@ mod tests {
         let kv_bool: KvPair<String, bool> = bincode::deserialize(&raw_records[0])
             .map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
         assert_eq!(kv_bool.key, "flag");
-        assert_eq!(kv_bool.value, true);
+        assert!(kv_bool.value);
 
         let kv_float: KvPair<String, f64> = bincode::deserialize(&raw_records[1])
             .map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
