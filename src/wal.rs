@@ -123,7 +123,7 @@ impl Wal {
 mod tests {
     use super::Wal;
     use crate::KvPair;
-    
+
     use env_logger::{Builder, Env};
     use std::io::{self, Read, Write};
     use std::sync::{Arc, Mutex};
