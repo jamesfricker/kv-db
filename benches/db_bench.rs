@@ -20,7 +20,7 @@ fn bench_db_insert(b: &mut Bencher) {
     }
 
     // Initialize a new Database with key and value as i32
-    let mut db: DB<i32, i32> = DB::new(&wal_path.to_str().unwrap().to_string(), 10);
+    let mut db: DB<i32, i32> = DB::new(wal_path.to_str().unwrap(), 10);
     let mut rng = rand::thread_rng();
 
     b.iter(|| {
@@ -42,7 +42,7 @@ fn bench_db_insert_existing(b: &mut Bencher) {
     }
 
     // Initialize a new Database with key and value as i32
-    let mut db: DB<i32, i32> = DB::new(&wal_path.to_str().unwrap().to_string(), 10);
+    let mut db: DB<i32, i32> = DB::new(wal_path.to_str().unwrap(), 10);
     let mut rng = rand::thread_rng();
 
     // Pre-populate the skip list with 1,000,000 elements
@@ -70,7 +70,7 @@ fn bench_db_get_existing(b: &mut Bencher) {
     }
 
     // Initialize a new Database with key and value as i32
-    let mut db: DB<i32, i32> = DB::new(&wal_path.to_str().unwrap().to_string(), 10);
+    let mut db: DB<i32, i32> = DB::new(wal_path.to_str().unwrap(), 10);
     let mut rng = rand::thread_rng();
     let mut keys = Vec::with_capacity(1_000_000);
 
@@ -101,7 +101,7 @@ fn bench_db_get_nonexistent(b: &mut Bencher) {
     }
 
     // Initialize a new Database with key and value as i32
-    let mut db: DB<i32, i32> = DB::new(&wal_path.to_str().unwrap().to_string(), 10);
+    let mut db: DB<i32, i32> = DB::new(wal_path.to_str().unwrap(), 10);
     let mut rng = rand::thread_rng();
 
     // Pre-populate the skip list with 1,000,000 elements

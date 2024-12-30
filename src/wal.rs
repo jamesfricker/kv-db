@@ -136,9 +136,9 @@ mod tests {
             .try_init();
     }
 
-    /// 1) Write a bool KV
-    /// 2) Write a float KV
-    /// 3) Write an i32 KV
+    ///     1) Write a bool KV
+    ///     2) Write a float KV
+    ///     3) Write an i32 KV
     /// Then read them all back using `read()`, which gives us raw `KvPair`s,
     /// and manually deserialize them with `bincode::deserialize`.
     #[test]
@@ -155,7 +155,7 @@ mod tests {
             })?;
             w.append(KvPair {
                 key: "pi",
-                value: 3.14159_f64,
+                value: std::f64::consts::PI,
             })?;
             w.append(KvPair {
                 key: "hello",
@@ -324,16 +324,13 @@ mod tests {
         let all = w.read::<String, i32>()?;
         assert_eq!(all.len(), 10, "Expected total of 10 records");
 
-        // Check first 5
-        for i in 0..5 {
-            assert_eq!(all[i].key, format!("round1-{}", i));
-            assert_eq!(all[i].value, i as i32);
-        }
-        // Check next 5
-        for (offset, rec) in all.iter().enumerate().skip(5) {
-            let i = offset as i32;
-            assert_eq!(rec.key, format!("round2-{}", i));
-            assert_eq!(rec.value, i);
+        // Check keys and values
+        for (count, i) in all.into_iter().enumerate() {
+            if count < 5 {
+                assert_eq!(i.key, format!("round1-{}", count));
+            } else {
+                assert_eq!(i.key, format!("round2-{}", count));
+            }
         }
 
         Ok(())
@@ -448,8 +445,8 @@ mod tests {
             // Now idx should be at the start of the 2nd record’s data
             // Let's corrupt 5 bytes (or as many remain)
             let end_idx = (idx + 5).min(contents.len());
-            for i in idx..end_idx {
-                contents[i] = 0xFF;
+            for byte in contents.iter_mut().skip(idx).take(end_idx - idx) {
+                *byte = 0xFF;
             }
 
             // Write it back

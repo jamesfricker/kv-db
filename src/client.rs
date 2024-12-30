@@ -24,7 +24,7 @@ pub fn start() {
         }
 
         // Split into tokens (by whitespace)
-        let tokens: Vec<&str> = line.trim().split_whitespace().collect();
+        let tokens: Vec<&str> = line.split_whitespace().collect();
 
         // If user just pressed Enter without typing anything, ignore
         if tokens.is_empty() {

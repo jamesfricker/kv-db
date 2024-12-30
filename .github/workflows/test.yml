@@ -37,13 +37,13 @@ jobs:
           path: benchmark_results.txt
 
   formatting:
-      runs-on: ubuntu-latest
-      steps:
-        - uses: actions/checkout@v4
-        - uses: Swatinem/rust-cache@v2
-        - run: rustup component add rustfmt
-        - name: Check Formatting
-          run: cargo fmt -- --check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: Swatinem/rust-cache@v2
+      - run: rustup component add rustfmt
+      - name: Check Formatting
+        run: cargo fmt -- --check
 
   lint:
     runs-on: ubuntu-latest
