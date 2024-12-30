@@ -22,3 +22,6 @@ Cargo.lock
 
 # coverage file
 cobertura.xml
+
+# db test wal
+db.wal
