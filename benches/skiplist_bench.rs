@@ -9,73 +9,78 @@ use test::Bencher;
 
 #[bench]
 fn bench_insert(b: &mut Bencher) {
-    // Initialize a new SkipList with key and value as i32
-    let mut skip_list: SkipList<i32, i32> = SkipList::new(20);
+    // Initialize a new SkipList with raw byte keys/values
+    let mut skip_list = SkipList::new(20);
     let mut rng = rand::thread_rng();
 
     b.iter(|| {
-        // Generate a random key and use it as the value for simplicity
-        let key = rng.gen::<i32>();
-        skip_list.put(key, key).unwrap();
+        // Generate a random i32 and convert to bytes
+        let key_i32 = rng.gen::<i32>();
+        let key_bytes = key_i32.to_be_bytes().to_vec();
+
+        // For simplicity, store the same data as the "value"
+        skip_list.put(key_bytes.clone(), key_bytes).unwrap();
     });
 }
 
 #[bench]
 fn bench_insert_existing(b: &mut Bencher) {
-    // Initialize a new SkipList with key and value as i32
-    let mut skip_list: SkipList<i32, i32> = SkipList::new(20);
+    let mut skip_list = SkipList::new(20);
     let mut rng = rand::thread_rng();
 
     // Pre-populate the skip list with 1,000,000 elements
     for _ in 0..1_000_000 {
-        let key = rng.gen::<i32>();
-        skip_list.put(key, key).unwrap();
+        let key_i32 = rng.gen::<i32>();
+        let key_bytes = key_i32.to_be_bytes().to_vec();
+        skip_list.put(key_bytes.clone(), key_bytes).unwrap();
     }
 
     b.iter(|| {
-        // Insert additional elements
-        let key = rng.gen::<i32>();
-        skip_list.put(key, key).unwrap();
+        let key_i32 = rng.gen::<i32>();
+        let key_bytes = key_i32.to_be_bytes().to_vec();
+        skip_list.put(key_bytes.clone(), key_bytes).unwrap();
     });
 }
 
 #[bench]
 fn bench_get_existing(b: &mut Bencher) {
-    // Initialize a new SkipList with key and value as i32
-    let mut skip_list: SkipList<i32, i32> = SkipList::new(20);
+    let mut skip_list = SkipList::new(20);
     let mut rng = rand::thread_rng();
     let mut keys = Vec::with_capacity(1_000_000);
 
     // Pre-populate the skip list with 1,000,000 elements
     for _ in 0..1_000_000 {
-        let key = rng.gen::<i32>();
-        skip_list.put(key, key).unwrap();
-        keys.push(key);
+        let key_i32 = rng.gen::<i32>();
+        let key_bytes = key_i32.to_be_bytes().to_vec();
+        skip_list.put(key_bytes.clone(), key_bytes.clone()).unwrap();
+        keys.push(key_i32); // Store the original i32 so we can retrieve it randomly
     }
 
     b.iter(|| {
         // Randomly select a key to retrieve
         let index = rng.gen_range(0..keys.len());
-        let key = keys[index];
-        skip_list.get(&key).unwrap();
+        let key_i32 = keys[index];
+        let key_bytes = key_i32.to_be_bytes().to_vec();
+        skip_list.get(key_bytes).unwrap();
     });
 }
 
 #[bench]
 fn bench_get_nonexistent(b: &mut Bencher) {
-    // Initialize a new SkipList with key and value as i32
-    let mut skip_list: SkipList<i32, i32> = SkipList::new(20);
+    let mut skip_list = SkipList::new(20);
     let mut rng = rand::thread_rng();
 
     // Pre-populate the skip list with 1,000,000 elements
     for _ in 0..1_000_000 {
-        let key = rng.gen::<i32>();
-        skip_list.put(key, key).unwrap();
+        let key_i32 = rng.gen::<i32>();
+        let key_bytes = key_i32.to_be_bytes().to_vec();
+        skip_list.put(key_bytes.clone(), key_bytes).unwrap();
     }
 
     b.iter(|| {
         // Generate a key that is unlikely to exist
-        let key = rng.gen::<i32>() + 1_000_000;
-        let _ = skip_list.get(&key);
+        let key_i32 = rng.gen::<i32>().wrapping_add(1_000_000);
+        let key_bytes = key_i32.to_be_bytes().to_vec();
+        let _ = skip_list.get(key_bytes);
     });
 }

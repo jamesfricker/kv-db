@@ -9,6 +9,7 @@ Features
 
 See more in `plan.md`.
 
-## Related Benchmarks
+## Related
 
-<http://www.lmdb.tech/bench/microbench/benchmark.html>
+- LevelDB Benchmarks: <http://www.lmdb.tech/bench/microbench/benchmark.html>
+- LevelDB in Rust: <https://github.com/dermesser/leveldb-rs/tree/master>

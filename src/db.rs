@@ -1,8 +1,6 @@
 use crate::kv::KvPair;
 use crate::skip_list::SkipList;
 use crate::wal::Wal;
-use serde::de::DeserializeOwned;
-use serde::Serialize;
 use std::fmt::Debug;
 use thiserror::Error;
 
@@ -12,16 +10,12 @@ pub enum DatabaseError {
     KeyNotFound,
 }
 
-pub struct DB<K, V> {
+pub struct DB {
     wal: Wal,
-    sl: SkipList<K, V>,
+    sl: SkipList,
 }
 
-impl<K, V> DB<K, V>
-where
-    K: Clone + Debug + PartialEq + Eq + Serialize + Ord + DeserializeOwned,
-    V: Clone + Debug + PartialEq + Eq + Serialize + Ord + DeserializeOwned,
-{
+impl DB {
     /// Creates a new `DB` with a backing WAL file and an in-memory SkipList.
     /// Replays the WAL so the SkipList reflects on-disk contents.
     pub fn new(location: &str, max_level: usize) -> Self {
@@ -32,7 +26,7 @@ where
         let mut sl = SkipList::new(max_level);
 
         // Replay existing WAL contents to restore in-memory data
-        let existing = wal.read::<K, V>().unwrap_or_default();
+        let existing = wal.read().unwrap_or_default();
         for KvPair { key, value } in existing {
             // Ignore errors here (e.g. duplicates) or handle them as you like
             let _ = sl.put(key, value);
@@ -42,7 +36,7 @@ where
     }
 
     /// Inserts (or updates) a key-value pair in the DB, writing to WAL first.
-    pub fn put(&mut self, key: K, value: V) -> Result<(), DatabaseError> {
+    pub fn put(&mut self, key: Vec<u8>, value: Vec<u8>) -> Result<(), DatabaseError> {
         let kv = KvPair {
             key: key.clone(),
             value: value.clone(),
@@ -58,11 +52,15 @@ where
             .put(key, value)
             .map_err(|_| DatabaseError::KeyNotFound)?;
 
+        // add a check here to see if we need to flush?
+
         Ok(())
     }
 
     /// Retrieves a reference to the value for the given key if it exists.
-    pub fn get(&self, key: &K) -> Result<&V, DatabaseError> {
+    pub fn get(&self, key: Vec<u8>) -> Result<Vec<u8>, DatabaseError> {
         self.sl.get(key).map_err(|_| DatabaseError::KeyNotFound)
     }
+
+    pub fn flush() {}
 }

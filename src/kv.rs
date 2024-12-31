@@ -1,14 +1,15 @@
 use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
-pub struct KvPair<K, V> {
-    pub key: K,
-    pub value: V,
+
+pub struct KvPair {
+    pub key: Vec<u8>,
+    pub value: Vec<u8>,
 }
 
-impl<K, V> KvPair<K, V> {
+impl KvPair {
     /// Create a new KvPair
-    pub fn new(key: K, value: V) -> Self {
+    pub fn new(key: Vec<u8>, value: Vec<u8>) -> Self {
         Self { key, value }
     }
 }

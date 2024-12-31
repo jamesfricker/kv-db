@@ -2,13 +2,23 @@
 
 ## TODO
 
-- db can start/stop and reload data from previous runs
-- store immutable data using sstables
-- improve sstables with lsm trees and leveled compaction
+### Core
+
+- store immutable data using sstables to provide complete persistence
+- create index for sstables to improve reads
+- do levelled compaction of sstables
 - bloom filter to improve read performance
+
+### Improvements
+
+- make WAL/Memtable writes atomic?
+  - what happens if we write to the WAL but not to the memtable?
+- make the types for the db easier to use
 
 ## Done
 
+- fix the types of the skip list - use `Vec<u8>` for both keys and values (bytes)?
+- db can start/stop and reload data from previous runs
 - create a WAL
 - add some ci (bench/test)
 - I'm pretty sure the skip list implementation is not exactly correct
@@ -18,6 +28,15 @@
 - node is key/value
 
 ## Notes
+
+### SSTables
+
+- we want to implement a 'flush' method on the Database(?)
+- this will create an `ImmutableSSTable` (TODO) object, and write the contents of the level 0 skip list to a file
+  - need to create some kind of threshold to know when to flush
+- On startup, we need to reload all the `ImmutableSSTable` objects, each having a reference to it's file
+- when we do a get, we need to search the current memtable (skip list) and also through the SSTables
+  - we search in reverse order, and return the first value that we find
 
 ### WAL
 
