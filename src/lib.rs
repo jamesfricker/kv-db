@@ -7,5 +7,4 @@ pub mod client;
 pub mod db;
 pub mod kv;
 pub mod skip_list;
-pub mod sstable;
 pub mod wal;
