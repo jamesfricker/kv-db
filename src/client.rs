@@ -2,7 +2,8 @@ use crate::db::DB;
 use std::io::{self, Write};
 
 pub fn start() {
-    let mut db = DB::<String, String>::new("db.wal", 5);
+    // Adjust as needed: DB::new likely takes (filename, max_level) or similar
+    let mut db = DB::new("db.wal", 5);
     let stdin = io::stdin();
 
     loop {
@@ -40,12 +41,24 @@ pub fn start() {
 
             "get" => {
                 if tokens.len() < 2 {
-                    eprintln!("Usage: get <key>");
+                    println!("Usage: get <key>");
                     continue;
                 }
-                let key = tokens[1];
-                match db.get(&key.to_string()) {
-                    Ok(value) => println!("Value: {}", value),
+                // Convert the typed key to raw bytes
+                let key_bytes = tokens[1].as_bytes().to_vec();
+
+                match db.get(key_bytes) {
+                    Ok(value_bytes) => {
+                        // If you want to interpret them as UTF-8, do so:
+                        match String::from_utf8(value_bytes) {
+                            Ok(s) => println!("Value: {}", s),
+                            Err(e) => {
+                                // Error type has the original bytes
+                                let raw_bytes = e.into_bytes();
+                                println!("(binary data) {:?}", raw_bytes);
+                            }
+                        }
+                    }
                     Err(e) => eprintln!("Error: {}", e),
                 }
             }
@@ -55,12 +68,13 @@ pub fn start() {
                     eprintln!("Usage: set <key> <value>");
                     continue;
                 }
-                let key = tokens[1].to_string();
-                // If there's more than one token after the key, join them with spaces.
-                // e.g. "set mykey hello world" => value = "hello world"
-                let value = tokens[2..].join(" ");
+                // Convert key to raw bytes
+                let key_bytes = tokens[1].as_bytes().to_vec();
+                // Join all subsequent tokens as the value, then convert to raw bytes
+                let value_string = tokens[2..].join(" ");
+                let value_bytes = value_string.into_bytes();
 
-                match db.put(key, value) {
+                match db.put(key_bytes, value_bytes) {
                     Ok(_) => println!("OK"),
                     Err(e) => eprintln!("Error: {}", e),
                 }

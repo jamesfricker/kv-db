@@ -12,15 +12,15 @@ pub enum SkipListError {
 }
 
 #[derive(Clone, Debug)]
-pub struct Node<K, V> {
-    pub key: Option<K>,
-    value: Option<V>,
+pub struct Node {
+    pub key: Option<Vec<u8>>,
+    value: Option<Vec<u8>>,
     pub forward: Vec<Option<usize>>,
 }
 
-pub struct SkipList<K, V> {
+pub struct SkipList {
     pub head: usize, // Always points to the sentinel node
-    pub nodes: Vec<Node<K, V>>,
+    pub nodes: Vec<Node>,
     max_level: usize,
     pub current_level: usize,
 
@@ -31,11 +31,7 @@ pub struct SkipList<K, V> {
     rng: SmallRng,
 }
 
-impl<K, V> SkipList<K, V>
-where
-    K: Ord + Clone + Debug,
-    V: Clone + Debug,
-{
+impl SkipList {
     pub fn new(max_level: usize) -> Self {
         let head_node = Node {
             key: None,
@@ -70,7 +66,7 @@ where
         level
     }
 
-    pub fn put(&mut self, key: K, value: V) -> Result<(), SkipListError> {
+    pub fn put(&mut self, key: Vec<u8>, value: Vec<u8>) -> Result<(), SkipListError> {
         let level = self.random_level();
         debug!("Inserting key {:?} with level {}", key, level);
 
@@ -145,29 +141,43 @@ where
     /// # Examples
     ///
     /// ```
-    /// # use kv_db::SkipList;
-    /// # use kv_db::SkipListError;
-    /// let mut skip_list = SkipList::new(5);
-    /// skip_list.put(42, "Answer to everything");
+    /// use kv_db::{SkipList, SkipListError};
     ///
-    /// match skip_list.get(&42) {
-    ///     Ok(value) => println!("Found: {}", value),
+    /// // Create a SkipList with some max_level (e.g. 5)
+    /// let mut skip_list = SkipList::new(5);
+    ///
+    /// // Store both the key (i32) and the value (string) as bytes
+    /// skip_list.put(
+    ///     42i32.to_be_bytes().to_vec(),
+    ///     b"Answer to everything".to_vec()
+    /// ).unwrap();
+    ///
+    /// // Retrieve it using the same raw bytes
+    /// match skip_list.get(42i32.to_be_bytes().to_vec()) {
+    ///     Ok(value_bytes) => {
+    ///         // Try interpreting the value as UTF-8
+    ///         if let Ok(value_str) = String::from_utf8(value_bytes) {
+    ///             println!("Found: {}", value_str);
+    ///         } else {
+    ///             println!("Found raw bytes, not valid UTF-8");
+    ///         }
+    ///     }
     ///     Err(SkipListError::KeyNotFound) => println!("Key not found."),
     /// }
     /// ```
-    pub fn get(&self, key: &K) -> Result<&V, SkipListError> {
+    pub fn get(&self, key: Vec<u8>) -> Result<Vec<u8>, SkipListError> {
         let mut current = self.head;
         // we start the search at the highest level, and go down
         for level in (0..=self.current_level).rev() {
             while let Some(next_idx) = self.nodes[current].forward[level] {
-                match self.nodes[next_idx].key.as_ref().unwrap().cmp(key) {
+                match self.nodes[next_idx].key.clone().unwrap().cmp(&key) {
                     // go to the next index
                     Ordering::Less => current = next_idx,
                     // we found the node
                     Ordering::Equal => {
                         return self.nodes[next_idx]
                             .value
-                            .as_ref()
+                            .clone()
                             .ok_or(SkipListError::KeyNotFound);
                     }
                     // break out of the loop and go down a level
@@ -194,7 +204,6 @@ where
         }
     }
 }
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -211,23 +220,34 @@ mod tests {
 
     #[test]
     fn test_insert_and_get_basic() {
-        // Initialize logger
         init_logger();
 
         let mut list = SkipList::new(5);
 
-        // Insert elements
-        list.put(3, "three").unwrap();
-        list.put(1, "one").unwrap();
-        list.put(2, "two").unwrap();
+        // Insert elements with raw byte keys and values
+        list.put(b"\x03".to_vec(), b"\x01\x02\x03".to_vec())
+            .unwrap(); // Key: [0x03], Value: [0x01, 0x02, 0x03]
+        list.put(b"\x01".to_vec(), b"\x04\x05\x06".to_vec())
+            .unwrap(); // Key: [0x01], Value: [0x04, 0x05, 0x06]
+        list.put(b"\x02".to_vec(), b"\x07\x08\x09".to_vec())
+            .unwrap(); // Key: [0x02], Value: [0x07, 0x08, 0x09]
 
         // Verify insertion and retrieval
-        assert_eq!(list.get(&1).unwrap(), &"one");
-        assert_eq!(list.get(&2).unwrap(), &"two");
-        assert_eq!(list.get(&3).unwrap(), &"three");
+        assert_eq!(
+            list.get(b"\x01".to_vec()).unwrap(),
+            b"\x04\x05\x06".to_vec()
+        );
+        assert_eq!(
+            list.get(b"\x02".to_vec()).unwrap(),
+            b"\x07\x08\x09".to_vec()
+        );
+        assert_eq!(
+            list.get(b"\x03".to_vec()).unwrap(),
+            b"\x01\x02\x03".to_vec()
+        );
 
         // Attempt to get a non-existent key
-        assert!(list.get(&4).is_err());
+        assert!(list.get(b"\x04".to_vec()).is_err());
     }
 
     #[test]
@@ -236,18 +256,22 @@ mod tests {
 
         let mut list = SkipList::new(5);
 
-        // Insert elements in sorted order
-        for i in 1..=10 {
-            list.put(i, format!("number {}", i)).unwrap();
+        // Insert elements in sorted order (keys are big-endian byte representations of 1..=10u32)
+        for i in 1u32..=10u32 {
+            let key = i.to_be_bytes().to_vec();
+            let value = format!("number {}", i).into_bytes();
+            list.put(key, value).unwrap();
         }
 
         // Verify all elements
-        for i in 1..=10 {
-            assert_eq!(list.get(&i).unwrap(), &format!("number {}", i));
+        for i in 1u32..=10u32 {
+            let key = i.to_be_bytes().to_vec();
+            let expected = format!("number {}", i).into_bytes();
+            assert_eq!(list.get(key).unwrap(), expected);
         }
 
         // Verify that non-existent key returns error
-        assert!(list.get(&11).is_err());
+        assert!(list.get(11u32.to_be_bytes().to_vec()).is_err());
     }
 
     #[test]
@@ -257,17 +281,21 @@ mod tests {
         let mut list = SkipList::new(5);
 
         // Insert elements in reverse order
-        for i in (1..=10).rev() {
-            list.put(i, format!("number {}", i)).unwrap();
+        for i in (1u32..=10u32).rev() {
+            let key = i.to_be_bytes().to_vec();
+            let value = format!("number {}", i).into_bytes();
+            list.put(key, value).unwrap();
         }
 
         // Verify all elements
-        for i in 1..=10 {
-            assert_eq!(list.get(&i).unwrap(), &format!("number {}", i));
+        for i in 1u32..=10u32 {
+            let key = i.to_be_bytes().to_vec();
+            let expected = format!("number {}", i).into_bytes();
+            assert_eq!(list.get(key).unwrap(), expected);
         }
 
         // Verify that non-existent key returns error
-        assert!(list.get(&0).is_err());
+        assert!(list.get(0u32.to_be_bytes().to_vec()).is_err());
     }
 
     #[test]
@@ -277,13 +305,18 @@ mod tests {
         let mut list = SkipList::new(5);
 
         // Insert a key
-        list.put(1, "one").unwrap();
+        list.put(1u32.to_be_bytes().to_vec(), b"one".to_vec())
+            .unwrap();
 
         // Insert the same key with a different value
-        list.put(1, "uno").unwrap();
+        list.put(1u32.to_be_bytes().to_vec(), b"uno".to_vec())
+            .unwrap();
 
         // Verify that the value is updated
-        assert_eq!(list.get(&1).unwrap(), &"uno");
+        assert_eq!(
+            list.get(1u32.to_be_bytes().to_vec()).unwrap(),
+            b"uno".to_vec()
+        );
     }
 
     #[test]
@@ -293,15 +326,23 @@ mod tests {
         let mut list = SkipList::new(5);
 
         // Insert some keys
-        list.put(10, "ten").unwrap();
-        list.put(20, "twenty").unwrap();
-        list.put(30, "thirty").unwrap();
+        list.put(10u32.to_be_bytes().to_vec(), b"ten".to_vec())
+            .unwrap();
+        list.put(20u32.to_be_bytes().to_vec(), b"twenty".to_vec())
+            .unwrap();
+        list.put(30u32.to_be_bytes().to_vec(), b"thirty".to_vec())
+            .unwrap();
 
         // Search for keys that do not exist
-        let nonexistent_keys = vec![5, 15, 25, 35];
+        let nonexistent_keys = vec![5u32, 15u32, 25u32, 35u32];
 
-        for key in nonexistent_keys {
-            assert!(list.get(&key).is_err(), "Key {} should not be found", key);
+        for key_num in nonexistent_keys {
+            let key = key_num.to_be_bytes().to_vec();
+            assert!(
+                list.get(key).is_err(),
+                "Key {} should not be found",
+                key_num
+            );
         }
     }
 
@@ -310,24 +351,33 @@ mod tests {
         init_logger();
 
         let mut list = SkipList::new(16); // Higher max_level for larger lists
-        let num_elements = 1000;
+        let num_elements = 1000u32;
         let mut inserted_keys = HashSet::new();
 
         // Insert a large number of elements
-        for i in 1..=num_elements {
-            list.put(i, format!("number {}", i)).unwrap();
+        for i in 1u32..=num_elements {
+            let key = i.to_be_bytes().to_vec();
+            let value = format!("number {}", i).into_bytes();
+            list.put(key, value).unwrap();
             inserted_keys.insert(i);
         }
 
         // Verify all inserted elements
-        for key in inserted_keys.iter() {
-            assert_eq!(list.get(key).unwrap(), &format!("number {}", key));
+        for key_num in inserted_keys.iter() {
+            let key = key_num.to_be_bytes().to_vec();
+            let expected_value = format!("number {}", key_num).into_bytes();
+            assert_eq!(list.get(key).unwrap(), expected_value);
         }
 
         // Verify that non-existent keys return error
-        let nonexistent_keys = vec![0, num_elements + 1, num_elements + 100];
-        for key in nonexistent_keys {
-            assert!(list.get(&key).is_err(), "Key {} should not be found", key);
+        let nonexistent_keys = vec![0u32, num_elements + 1, num_elements + 100];
+        for key_num in nonexistent_keys {
+            let key = key_num.to_be_bytes().to_vec();
+            assert!(
+                list.get(key).is_err(),
+                "Key {} should not be found",
+                key_num
+            );
         }
     }
 
@@ -342,22 +392,31 @@ mod tests {
 
         // Insert elements in random order
         for _ in 0..num_elements {
-            let key = rng.gen_range(1..=10000);
-            let value = format!("value {}", key);
-            list.put(key, value).unwrap();
-            inserted_keys.insert(key);
+            // rng.gen_range(...) by default is i32; specify as u32 if you want to_be_bytes
+            let key_num = rng.gen_range(1u32..=10000u32);
+            let key = key_num.to_be_bytes().to_vec();
+            let value = format!("value {}", key_num).into_bytes();
+            list.put(key.clone(), value).unwrap();
+            inserted_keys.insert(key_num);
         }
 
         // Verify all inserted elements
-        for key in inserted_keys.iter() {
+        for key_num in inserted_keys.iter() {
+            let key = key_num.to_be_bytes().to_vec();
+            let expected = format!("value {}", key_num).into_bytes();
             let retrieved = list.get(key).unwrap();
-            assert_eq!(retrieved, &format!("value {}", key));
+            assert_eq!(retrieved, expected);
         }
 
         // Verify that non-existent keys return error
-        let nonexistent_keys = vec![10001, 20000, 30000];
-        for key in nonexistent_keys {
-            assert!(list.get(&key).is_err(), "Key {} should not be found", key);
+        let nonexistent_keys = vec![10001u32, 20000u32, 30000u32];
+        for key_num in nonexistent_keys {
+            let key = key_num.to_be_bytes().to_vec();
+            assert!(
+                list.get(key).is_err(),
+                "Key {} should not be found",
+                key_num
+            );
         }
     }
 
@@ -369,18 +428,22 @@ mod tests {
         let mut list = SkipList::new(max_level);
 
         // Insert elements that potentially reach up to max_level
-        for i in 1..=20 {
-            list.put(i, format!("number {}", i)).unwrap();
+        for i in 1u32..=20u32 {
+            let key = i.to_be_bytes().to_vec();
+            let value = format!("number {}", i).into_bytes();
+            list.put(key, value).unwrap();
         }
 
         // Verify all elements
-        for i in 1..=20 {
-            assert_eq!(list.get(&i).unwrap(), &format!("number {}", i));
+        for i in 1u32..=20u32 {
+            let key = i.to_be_bytes().to_vec();
+            let expected = format!("number {}", i).into_bytes();
+            assert_eq!(list.get(key).unwrap(), expected);
         }
 
         // Verify that non-existent keys return error
-        assert!(list.get(&0).is_err());
-        assert!(list.get(&21).is_err());
+        assert!(list.get(0u32.to_be_bytes().to_vec()).is_err());
+        assert!(list.get(21u32.to_be_bytes().to_vec()).is_err());
     }
 
     #[test]
@@ -394,26 +457,33 @@ mod tests {
 
         // Insert elements in random order
         for _ in 0..num_elements {
-            let key = rng.gen_range(1..=1000);
-            let value = format!("value {}", key);
-            list.put(key, value).unwrap();
-            inserted_keys.push(key);
+            let key_num = rng.gen_range(1u32..=1000u32);
+            let key = key_num.to_be_bytes().to_vec();
+            let value = format!("value {}", key_num).into_bytes();
+            list.put(key.clone(), value).unwrap();
+            inserted_keys.push(key_num);
         }
 
         // Remove duplicates
-        inserted_keys.sort();
+        inserted_keys.sort_unstable();
         inserted_keys.dedup();
 
         // Verify all unique inserted elements
-        for key in inserted_keys.iter() {
+        for key_num in inserted_keys.iter() {
+            let key = key_num.to_be_bytes().to_vec();
             let retrieved = list.get(key).unwrap();
-            assert_eq!(retrieved, &format!("value {}", key));
+            assert_eq!(retrieved, format!("value {}", key_num).into_bytes());
         }
 
         // Verify that non-existent keys return error
-        let nonexistent_keys = vec![1001, 2000, 3000];
-        for key in nonexistent_keys {
-            assert!(list.get(&key).is_err(), "Key {} should not be found", key);
+        let nonexistent_keys = vec![1001u32, 2000u32, 3000u32];
+        for key_num in nonexistent_keys {
+            let key = key_num.to_be_bytes().to_vec();
+            assert!(
+                list.get(key).is_err(),
+                "Key {} should not be found",
+                key_num
+            );
         }
     }
 
@@ -421,12 +491,13 @@ mod tests {
     fn test_skiplist_empty() {
         init_logger();
 
-        let list: SkipList<i32, &str> = SkipList::new(5);
+        // An empty skiplist
+        let list = SkipList::new(5);
 
-        // Attempt to get any key should fail
-        assert!(list.get(&1).is_err());
-        assert!(list.get(&0).is_err());
-        assert!(list.get(&-1).is_err());
+        // Attempting to get any key should fail
+        assert!(list.get(b"\x01".to_vec()).is_err());
+        assert!(list.get(b"\x00".to_vec()).is_err());
+        assert!(list.get(b"\xFF".to_vec()).is_err());
     }
 
     #[test]
@@ -436,14 +507,14 @@ mod tests {
         let mut list = SkipList::new(5);
 
         // Insert a single element
-        list.put(42, "forty-two").unwrap();
+        list.put(b"\x2A".to_vec(), b"forty-two".to_vec()).unwrap();
 
         // Verify the inserted element
-        assert_eq!(list.get(&42).unwrap(), &"forty-two");
+        assert_eq!(list.get(b"\x2A".to_vec()).unwrap(), b"forty-two".to_vec());
 
         // Verify that other keys are not found
-        assert!(list.get(&41).is_err());
-        assert!(list.get(&43).is_err());
+        assert!(list.get(b"\x29".to_vec()).is_err());
+        assert!(list.get(b"\x2B".to_vec()).is_err());
     }
 
     #[test]
@@ -453,12 +524,12 @@ mod tests {
         let mut list = SkipList::new(5);
 
         // Insert the same key multiple times with different values
-        list.put(100, "hundred").unwrap();
-        list.put(100, "cien").unwrap(); // Update
-        list.put(100, "cent").unwrap(); // Update again
+        list.put(b"\x64".to_vec(), b"hundred".to_vec()).unwrap();
+        list.put(b"\x64".to_vec(), b"cien".to_vec()).unwrap();
+        list.put(b"\x64".to_vec(), b"cent".to_vec()).unwrap();
 
         // Verify the latest value
-        assert_eq!(list.get(&100).unwrap(), &"cent");
+        assert_eq!(list.get(b"\x64".to_vec()).unwrap(), b"cent".to_vec());
     }
 
     #[test]
@@ -468,26 +539,32 @@ mod tests {
         let mut list = SkipList::new(3);
 
         // Insert elements
-        list.put(1, "one").unwrap();
-        list.put(2, "two").unwrap();
-        list.put(3, "three").unwrap();
-        list.put(4, "four").unwrap();
-        list.put(5, "five").unwrap();
+        list.put(b"\x01".to_vec(), b"one".to_vec()).unwrap();
+        list.put(b"\x02".to_vec(), b"two".to_vec()).unwrap();
+        list.put(b"\x03".to_vec(), b"three".to_vec()).unwrap();
+        list.put(b"\x04".to_vec(), b"four".to_vec()).unwrap();
+        list.put(b"\x05".to_vec(), b"five".to_vec()).unwrap();
 
         // Traverse each level and verify sorted order
         for level in 0..=list.current_level {
             let mut current = list.head;
-            let mut previous_key = None;
+            let mut previous_key: Option<Vec<u8>> = None;
 
             while let Some(next_idx) = list.nodes[current].forward[level] {
                 let node = &list.nodes[next_idx];
                 let key = node.key.as_ref().unwrap();
 
-                if let Some(prev) = previous_key {
-                    assert!(prev < key, "List is not sorted at level {}", level);
+                if let Some(ref prev) = previous_key {
+                    // Ensure keys are in ascending byte order at this level
+                    assert!(
+                        prev < key,
+                        "List is not sorted at level {} (prev={:?}, current={:?})",
+                        level,
+                        prev,
+                        key
+                    );
                 }
-
-                previous_key = Some(key);
+                previous_key = Some(key.clone());
                 current = next_idx;
             }
         }

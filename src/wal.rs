@@ -1,9 +1,13 @@
+// --------------- wal.rs ---------------
 use crate::kv::KvPair;
 use bincode::{deserialize, serialize};
-use serde::{de::DeserializeOwned, Serialize};
 use std::fs::{File, OpenOptions};
 use std::io::{self, BufReader, Read, Write};
 
+/// Write-Ahead Log
+///
+/// Persists key/value pairs in a length-prefixed bincode format:
+/// [4-byte big-endian length] [bincode-serialized KvPair].
 pub struct Wal {
     location: String,
     file: File,
@@ -12,9 +16,6 @@ pub struct Wal {
 impl Wal {
     /// Creates a new `Wal` instance, creating the file if it doesn't exist.
     /// Opens the file for reading and appending.
-    ///
-    /// Records in the WAL are stored in a length-prefixed binary format:
-    ///     [4-byte big-endian length] [bincode-serialized data]
     pub fn new(location: String) -> io::Result<Self> {
         let file = OpenOptions::new()
             .read(true)
@@ -25,17 +26,13 @@ impl Wal {
         Ok(Wal { location, file })
     }
 
-    /// Appends a single key-value record to the WAL.
+    /// Appends a single key-value record (as raw bytes) to the WAL.
     ///
-    /// 1. We bincode-serialize the `KvPair<K, V>`.
-    /// 2. We write a 4-byte length (big-endian) specifying how many bytes the record has.
-    /// 3. Then we write the bytes themselves.
+    /// 1. We bincode-serialize the `KvPair` (which already has `Vec<u8>` key + `Vec<u8>` value).
+    /// 2. We write a 4-byte length (big-endian).
+    /// 3. We write the bytes themselves.
     /// 4. We flush to ensure durability.
-    pub fn append<K, V>(&mut self, kv: KvPair<K, V>) -> io::Result<()>
-    where
-        K: Serialize,
-        V: Serialize,
-    {
+    pub fn append(&mut self, kv: KvPair) -> io::Result<()> {
         let serialized = serialize(&kv).map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
 
         let record_len = serialized.len() as u32;
@@ -48,21 +45,9 @@ impl Wal {
         Ok(())
     }
 
-    /// Reads *all* records from the WAL and returns them as a `Vec<KvPair<K, V>>`.
-    ///
-    /// It repeatedly:
-    /// 1. Reads a 4-byte length (big-endian).
-    /// 2. Reads that many bytes from the file.
-    /// 3. Bincode-deserializes those bytes into `KvPair<K, V>`.
-    /// 4. Collects results until EOF.
-    ///
-    /// If at any point we can't read the full length (EOF), we stop.
-    /// If bincode errors, we wrap it in an `io::Error`.
-    pub fn read<K, V>(&self) -> io::Result<Vec<KvPair<K, V>>>
-    where
-        K: DeserializeOwned,
-        V: DeserializeOwned,
-    {
+    /// Reads *all* records from the WAL as `KvPair` (raw bytes for key + value).
+    /// On EOF, it returns all records read so far.
+    pub fn read(&self) -> io::Result<Vec<KvPair>> {
         let file = File::open(&self.location)?;
         let mut reader = BufReader::new(file);
 
@@ -91,6 +76,9 @@ impl Wal {
 
         Ok(kv_pairs)
     }
+
+    /// Returns the raw (serialized) records as `Vec<Vec<u8>>`.
+    /// Each record is just the bincode payload (no 4-byte prefix).
     pub fn read_raw(&self) -> io::Result<Vec<Vec<u8>>> {
         let file = File::open(&self.location)?;
         let mut reader = BufReader::new(file);
@@ -112,18 +100,21 @@ impl Wal {
             let mut data = vec![0; record_len];
             reader.read_exact(&mut data)?;
 
-            // Now we just store this binary chunk as-is
+            // Store this binary chunk as-is
             raw_records.push(data);
         }
 
         Ok(raw_records)
     }
 }
+
+// --------------- tests.rs ---------------
 #[cfg(test)]
 mod tests {
     use super::Wal;
-    use crate::KvPair;
+    use crate::kv::KvPair;
 
+    use bincode;
     use env_logger::{Builder, Env};
     use std::io::{self, Read, Write};
     use std::sync::{Arc, Mutex};
@@ -139,50 +130,57 @@ mod tests {
     ///     1) Write a bool KV
     ///     2) Write a float KV
     ///     3) Write an i32 KV
-    /// Then read them all back using `read()`, which gives us raw `KvPair`s,
+    /// Then read them all back using `read_raw()`, which gives us raw bytes,
     /// and manually deserialize them with `bincode::deserialize`.
     #[test]
     fn test_wal_raw_bytes() -> io::Result<()> {
+        init_logger();
         let temp = NamedTempFile::new()?;
         let path = temp.path().to_string_lossy().to_string();
 
         {
             let mut w = Wal::new(path.clone())?;
-            // Write various types:
-            w.append(KvPair {
-                key: "flag",
-                value: true,
-            })?;
-            w.append(KvPair {
-                key: "pi",
-                value: std::f64::consts::PI,
-            })?;
-            w.append(KvPair {
-                key: "hello",
-                value: 42_i32,
-            })?;
+
+            // Key = "flag", value = true (serialized)
+            w.append(KvPair::new(
+                b"flag".to_vec(),
+                bincode::serialize(&true).unwrap(),
+            ))?;
+
+            // Key = "pi", value = f64::consts::PI (serialized)
+            w.append(KvPair::new(
+                b"pi".to_vec(),
+                bincode::serialize(&std::f64::consts::PI).unwrap(),
+            ))?;
+
+            // Key = "hello", value = 42_i32 (serialized)
+            w.append(KvPair::new(
+                b"hello".to_vec(),
+                bincode::serialize(&42_i32).unwrap(),
+            ))?;
         }
 
         // Now read the *raw* bytes
         let w = Wal::new(path)?;
-        let raw_records = w.read_raw()?; // returns Vec<Vec<u8>>
+        let raw_records = w.read_raw()?;
 
         assert_eq!(raw_records.len(), 3);
 
-        // Manually decode each record as we wish
-        let kv_bool: KvPair<String, bool> = bincode::deserialize(&raw_records[0])
-            .map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
-        assert_eq!(kv_bool.key, "flag");
-        assert!(kv_bool.value);
+        // Manually decode each record
+        let kv_bool: KvPair = bincode::deserialize(&raw_records[0]).unwrap();
+        assert_eq!(kv_bool.key, b"flag".to_vec());
+        let bool_val: bool = bincode::deserialize(&kv_bool.value).unwrap();
+        assert!(bool_val);
 
-        let kv_float: KvPair<String, f64> = bincode::deserialize(&raw_records[1])
-            .map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
-        assert_eq!(kv_float.key, "pi");
+        let kv_float: KvPair = bincode::deserialize(&raw_records[1]).unwrap();
+        assert_eq!(kv_float.key, b"pi".to_vec());
+        let pi_val: f64 = bincode::deserialize(&kv_float.value).unwrap();
+        assert!((pi_val - std::f64::consts::PI).abs() < f64::EPSILON);
 
-        let kv_int: KvPair<String, i32> = bincode::deserialize(&raw_records[2])
-            .map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
-        assert_eq!(kv_int.key, "hello");
-        assert_eq!(kv_int.value, 42);
+        let kv_int: KvPair = bincode::deserialize(&raw_records[2]).unwrap();
+        assert_eq!(kv_int.key, b"hello".to_vec());
+        let int_val: i32 = bincode::deserialize(&kv_int.value).unwrap();
+        assert_eq!(int_val, 42);
 
         Ok(())
     }
@@ -201,29 +199,35 @@ mod tests {
         let mut w1 = Wal::new(p1.clone())?;
         let mut w2 = Wal::new(p2.clone())?;
 
-        w1.append(KvPair {
-            key: "w1-a",
-            value: 1,
-        })?;
-        w2.append(KvPair {
-            key: "w2-b",
-            value: 2,
-        })?;
+        // In w1, key="w1-a", value=1
+        w1.append(KvPair::new(
+            b"w1-a".to_vec(),
+            bincode::serialize(&1i32).unwrap(),
+        ))?;
+        // In w2, key="w2-b", value=2
+        w2.append(KvPair::new(
+            b"w2-b".to_vec(),
+            bincode::serialize(&2i32).unwrap(),
+        ))?;
 
         // Reopen them
         let w1b = Wal::new(p1)?;
         let w2b = Wal::new(p2)?;
 
-        let raw1 = w1b.read::<String, i32>()?;
-        let raw2 = w2b.read::<String, i32>()?;
+        // Read all KvPairs
+        let raw1 = w1b.read()?;
+        let raw2 = w2b.read()?;
         assert_eq!(raw1.len(), 1, "w1 should have 1 record");
         assert_eq!(raw2.len(), 1, "w2 should have 1 record");
 
-        // Check correctness
-        assert_eq!(raw1[0].key, "w1-a");
-        assert_eq!(raw1[0].value, 1);
-        assert_eq!(raw2[0].key, "w2-b");
-        assert_eq!(raw2[0].value, 2);
+        // Decode the values
+        let val1: i32 = bincode::deserialize(&raw1[0].value).unwrap();
+        assert_eq!(raw1[0].key, b"w1-a".to_vec());
+        assert_eq!(val1, 1);
+
+        let val2: i32 = bincode::deserialize(&raw2[0].value).unwrap();
+        assert_eq!(raw2[0].key, b"w2-b".to_vec());
+        assert_eq!(val2, 2);
 
         Ok(())
     }
@@ -239,15 +243,14 @@ mod tests {
 
         let total_records = 20_000;
         for i in 0..total_records {
-            w.append(KvPair {
-                key: format!("k{}", i),
-                value: i,
-            })?;
+            let key = format!("k{}", i).into_bytes();
+            let value = bincode::serialize(&(i as i32)).unwrap(); // store i32
+            w.append(KvPair::new(key, value))?;
         }
 
         // Reopen & read
         let w = Wal::new(path)?;
-        let all = w.read::<String, i32>()?;
+        let all = w.read()?;
         assert_eq!(
             all.len(),
             total_records,
@@ -255,14 +258,21 @@ mod tests {
         );
 
         // Spot check a few entries
-        assert_eq!(all[0].key, "k0");
-        assert_eq!(all[0].value, 0);
-        assert_eq!(all[all.len() - 1].key, format!("k{}", total_records - 1));
-        assert_eq!(all[all.len() - 1].value, (total_records - 1) as i32);
+        // the first
+        assert_eq!(all[0].key, b"k0".to_vec());
+        let val0: i32 = bincode::deserialize(&all[0].value).unwrap();
+        assert_eq!(val0, 0);
+
+        // the last
+        let last = &all[all.len() - 1];
+        let val_last: i32 = bincode::deserialize(&last.value).unwrap();
+        assert_eq!(last.key, format!("k{}", total_records - 1).into_bytes());
+        assert_eq!(val_last, (total_records - 1) as i32);
+
         Ok(())
     }
 
-    /// Test writing and then reading back a very large single record (e.g. ~1 MB).
+    /// Test writing and then reading back a very large single record (~1 MB).
     #[test]
     fn test_large_record() -> io::Result<()> {
         init_logger();
@@ -275,18 +285,20 @@ mod tests {
         // Create a big string of ~1MB
         let size = 1_000_000;
         let big_string = "x".repeat(size);
-        let kv = KvPair {
-            key: "big_record".to_string(),
-            value: big_string.clone(),
-        };
+        let kv = KvPair::new(
+            b"big_record".to_vec(),
+            bincode::serialize(&big_string).unwrap(),
+        );
         w.append(kv)?;
 
         // Reopen & read
         let w = Wal::new(path)?;
-        let all = w.read::<String, String>()?;
+        let all = w.read()?;
         assert_eq!(all.len(), 1, "Expected exactly one record");
-        assert_eq!(all[0].key, "big_record");
-        assert_eq!(all[0].value.len(), size, "Expected data length to match");
+        assert_eq!(all[0].key, b"big_record".to_vec());
+
+        let read_back: String = bincode::deserialize(&all[0].value).unwrap();
+        assert_eq!(read_back.len(), size, "Expected data length to match");
         Ok(())
     }
 
@@ -301,10 +313,9 @@ mod tests {
             // Round 1: create WAL, append 5 records
             let mut w = Wal::new(path.clone())?;
             for i in 0..5 {
-                w.append(KvPair {
-                    key: format!("round1-{}", i),
-                    value: i,
-                })?;
+                let key = format!("round1-{}", i).into_bytes();
+                let val = bincode::serialize(&i).unwrap();
+                w.append(KvPair::new(key, val))?;
             }
         }
 
@@ -312,24 +323,24 @@ mod tests {
             // Round 2: reopen, append 5 more
             let mut w = Wal::new(path.clone())?;
             for i in 5..10 {
-                w.append(KvPair {
-                    key: format!("round2-{}", i),
-                    value: i,
-                })?;
+                let key = format!("round2-{}", i).into_bytes();
+                let val = bincode::serialize(&i).unwrap();
+                w.append(KvPair::new(key, val))?;
             }
         }
 
         // Final read
         let w = Wal::new(path)?;
-        let all = w.read::<String, i32>()?;
+        let all = w.read()?;
         assert_eq!(all.len(), 10, "Expected total of 10 records");
 
-        // Check keys and values
-        for (count, i) in all.into_iter().enumerate() {
+        // Check keys
+        for (count, kvp) in all.into_iter().enumerate() {
+            let key_s = String::from_utf8_lossy(&kvp.key);
             if count < 5 {
-                assert_eq!(i.key, format!("round1-{}", count));
+                assert_eq!(key_s, format!("round1-{}", count));
             } else {
-                assert_eq!(i.key, format!("round2-{}", count));
+                assert_eq!(key_s, format!("round2-{}", count));
             }
         }
 
@@ -337,9 +348,7 @@ mod tests {
     }
 
     /// Simulate truncating the WAL in the middle of a record (like a crash).
-    /// The final record can't be fully read.
-    /// We'll see if the partial record triggers an error or is simply ignored,
-    /// depending on how your code is structured.
+    /// The final record can't be fully read. We check if it's ignored or triggers an error.
     #[test]
     fn test_truncated_record() -> io::Result<()> {
         init_logger();
@@ -349,25 +358,20 @@ mod tests {
         // Write 2 complete records
         {
             let mut w = Wal::new(path.clone())?;
-            w.append(KvPair {
-                key: "complete1",
-                value: 1_i32,
-            })?;
-            w.append(KvPair {
-                key: "complete2",
-                value: 2_i32,
-            })?;
+            w.append(KvPair::new(
+                b"complete1".to_vec(),
+                bincode::serialize(&1_i32).unwrap(),
+            ))?;
+            w.append(KvPair::new(
+                b"complete2".to_vec(),
+                bincode::serialize(&2_i32).unwrap(),
+            ))?;
         }
 
         // Now write half of a third record's bytes
-        // (writing the length, but not all the data)
         {
-            use bincode::serialize;
-            let kv = KvPair {
-                key: "partial",
-                value: 999_i32,
-            };
-            let serialized = serialize(&kv).unwrap();
+            let kv = KvPair::new(b"partial".to_vec(), bincode::serialize(&999_i32).unwrap());
+            let serialized = bincode::serialize(&kv).unwrap();
             let record_len = serialized.len() as u32;
 
             // manually open the file in append mode
@@ -382,17 +386,15 @@ mod tests {
 
         // Now read from the WAL
         let w = Wal::new(path)?;
-        // read() might find the partial record and fail, or stop at the second record
-        let result = w.read::<String, i32>();
+        let result = w.read();
 
         match result {
             Ok(records) => {
-                // Possibly your code just stops after the 2 complete records.
-                // If so, we can confirm that the partial record is ignored:
+                // Code that ignores partial record will just return the complete ones
                 assert_eq!(records.len(), 2, "Expected only 2 valid records");
             }
             Err(e) => {
-                // Or your code might fail if it tries to read the partial record.
+                // Or your code might fail when it sees incomplete data
                 eprintln!("Got an error reading partial record: {}", e);
             }
         }
@@ -412,10 +414,11 @@ mod tests {
         {
             let mut w = Wal::new(path.clone())?;
             for i in 0..3 {
-                w.append(KvPair {
-                    key: format!("pre_corrupt_{}", i),
-                    value: i,
-                })?;
+                let kv = KvPair::new(
+                    format!("pre_corrupt_{}", i).into_bytes(),
+                    bincode::serialize(&i).unwrap(),
+                );
+                w.append(kv)?;
             }
         }
 
@@ -427,13 +430,11 @@ mod tests {
                 f.read_to_end(&mut contents)?;
             }
 
-            // We have 3 records => we have 3 length prefixes + 3 data blobs
-            // We'll blindly locate the 2nd record's data by stepping through the first length prefix
-            // and skipping that many bytes, then corrupt part of that record.
-            // This is a quick hack for demonstration:
-
+            // We have 3 records => 3 length prefixes + 3 data blobs
+            // We'll skip the first record, then corrupt part of the second.
             let mut idx = 0;
-            for _rec_idx in 0..2 {
+            for _rec_idx in 0..1 {
+                // skip length + data for the first record
                 if idx + 4 > contents.len() {
                     break;
                 }
@@ -442,11 +443,16 @@ mod tests {
                 idx += 4 + record_len;
             }
 
-            // Now idx should be at the start of the 2nd record’s data
-            // Let's corrupt 5 bytes (or as many remain)
-            let end_idx = (idx + 5).min(contents.len());
-            for byte in contents.iter_mut().skip(idx).take(end_idx - idx) {
-                *byte = 0xFF;
+            // Now idx should be at the start of the 2nd record’s length prefix
+            // move ahead 4 bytes to get to its data
+            if idx + 4 <= contents.len() {
+                idx += 4;
+                // Now idx is at the start of the actual record bytes
+                // Let's corrupt 5 bytes
+                let end_idx = (idx + 5).min(contents.len());
+                for byte in contents.iter_mut().skip(idx).take(end_idx - idx) {
+                    *byte = 0xFF;
+                }
             }
 
             // Write it back
@@ -458,13 +464,16 @@ mod tests {
 
         // Now read
         let w = Wal::new(path)?;
-        let res = w.read::<String, i32>();
+        let res = w.read();
 
         match res {
             Ok(records) => {
-                // Possibly you only read the first record successfully, then hit an error on the 2nd
-                // or skip the corrupted record. Implementation details vary.
-                println!("Records read successfully: {:?}", records);
+                // Possibly you only read the first record successfully, then error on the 2nd,
+                // or skip the corrupted record. Implementation depends on your design.
+                println!(
+                    "Records read successfully (some might be missing): {:?}",
+                    records
+                );
             }
             Err(e) => {
                 // Possibly you fail as soon as you hit the corrupted record.
@@ -476,8 +485,7 @@ mod tests {
     }
 
     /// Very simplistic concurrency test: multiple threads each append multiple records.
-    /// We wrap the single WAL in a Mutex to avoid partial interleaving.
-    /// Then we check if the total # of records is correct at the end.
+    /// We wrap the single WAL in a Mutex so that writes do not interleave arbitrarily.
     #[test]
     fn test_concurrent_appends() -> io::Result<()> {
         init_logger();
@@ -494,12 +502,12 @@ mod tests {
             let wal_clone = Arc::clone(&wal);
             let handle = thread::spawn(move || {
                 for i in 0..writes_per_thread {
-                    let kv = KvPair {
-                        key: format!("t{}-k{}", t_id, i),
-                        value: i as i32,
-                    };
+                    let key = format!("t{}-k{}", t_id, i).into_bytes();
+                    let value = bincode::serialize(&(i as i32)).unwrap();
                     let mut locked = wal_clone.lock().unwrap();
-                    locked.append(kv).expect("append failed");
+                    locked
+                        .append(KvPair::new(key, value))
+                        .expect("append failed");
                 }
             });
             handles.push(handle);
@@ -511,7 +519,7 @@ mod tests {
 
         // Now read them all
         let final_wal = Wal::new(path)?;
-        let all = final_wal.read::<String, i32>()?;
+        let all = final_wal.read()?;
         assert_eq!(
             all.len(),
             thread_count * writes_per_thread,
